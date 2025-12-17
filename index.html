@@ -1,312 +1,505 @@
-document.addEventListener('DOMContentLoaded', () => {
-    // 1. 기본 설정
-    const grid = document.querySelector('.grid');
-    const nextGrid = document.querySelector('.next-grid');
-    const scoreDisplay = document.querySelector('.score-display');
-    const startButton = document.querySelector('.start-button');
-    const width = 10; // 게임 보드 너비 (10칸)
-    let nextWidth = 4; // 다음 블록 보드 너비 (4칸)
-    let squares = Array.from(grid.querySelectorAll('div'));
-    let nextSquares = Array.from(nextGrid.querySelectorAll('div'));
-    let timerId; // 게임 루프 타이머
-    let score = 0;
-    let isGameOver = false;
-    let isPaused = true;
-
-    // 2. 게임 보드 초기화: 200개의 셀 + 10개의 고스트 셀
-    for (let i = 0; i < 210; i++) {
-        const div = document.createElement('div');
-        if (i >= 200) {
-            div.classList.add('taken'); // 바닥을 'taken'으로 표시
-        }
-        grid.appendChild(div);
-    }
-    squares = Array.from(grid.querySelectorAll('div'));
-
-    // 3. 다음 블록 보드 초기화
-    for (let i = 0; i < 16; i++) {
-        const div = document.createElement('div');
-        nextGrid.appendChild(div);
-    }
-    nextSquares = Array.from(nextGrid.querySelectorAll('div'));
-
-
-    // 4. 테트로미노(Tetrominoes) 모양 정의 (7가지 블록)
-    // 각 블록은 4개의 셀로 구성되며, 회전 형태를 모두 포함합니다.
-    const lTetromino = [
-        [1, width + 1, width * 2 + 1, 2],
-        [width, width + 1, width + 2, width * 2 + 2],
-        [1, width + 1, width * 2 + 1, width * 2],
-        [width, width * 2, width * 2 + 1, width * 2 + 2]
-    ];
-    // ... 나머지 6개의 블록도 정의 (J, I, O, S, Z, T)
-    const jTetromino = [
-        [0, width, width * 2, width * 2 + 1],
-        [width, width + 1, width + 2, width * 2],
-        [1, width + 1, width * 2 + 1, width * 2],
-        [width, width * 2, width * 2 + 1, width * 2 + 2]
-    ];
-
-    const iTetromino = [
-        [1, width + 1, width * 2 + 1, width * 3 + 1],
-        [width, width + 1, width + 2, width + 3],
-        [1, width + 1, width * 2 + 1, width * 3 + 1],
-        [width, width + 1, width + 2, width + 3]
-    ];
-
-    const oTetromino = [
-        [0, 1, width, width + 1],
-        [0, 1, width, width + 1],
-        [0, 1, width, width + 1],
-        [0, 1, width, width + 1]
-    ];
-
-    const sTetromino = [
-        [width + 1, width + 2, width * 2, width * 2 + 1],
-        [1, width + 1, width + 2, width * 2 + 2],
-        [width + 1, width + 2, width * 2, width * 2 + 1],
-        [1, width + 1, width + 2, width * 2 + 2]
-    ];
-
-    const zTetromino = [
-        [width, width + 1, width * 2 + 1, width * 2 + 2],
-        [width * 2 + 1, width * 2, width + 1, width],
-        [width, width + 1, width * 2 + 1, width * 2 + 2],
-        [width * 2 + 1, width * 2, width + 1, width]
-    ];
-
-    const tTetromino = [
-        [1, width, width + 1, width + 2],
-        [1, width + 1, width + 2, width * 2 + 1],
-        [width, width + 1, width + 2, width * 2 + 1],
-        [1, width, width + 1, width * 2 + 1]
-    ];
-
-    const theTetrominoes = [lTetromino, jTetromino, iTetromino, oTetromino, sTetromino, zTetromino, tTetromino];
-    const colors = ['l', 'j', 'i', 'o', 's', 'z', 't']; // CSS 클래스와 일치
-
-    let currentPosition = 4; // 시작 위치
-    let currentRotation = 0; // 초기 회전 상태
-    let random = Math.floor(Math.random() * theTetrominoes.length);
-    let current = theTetrominoes[random][currentRotation];
-    let currentColor = colors[random];
-    let nextRandom = Math.floor(Math.random() * theTetrominoes.length);
-
-    // 5. 블록 그리기
-    function draw() {
-        if (!current) return;
-        current.forEach(index => {
-            squares[currentPosition + index].classList.add('block', currentColor);
-        });
-    }
-
-    // 6. 블록 지우기
-    function undraw() {
-        if (!current) return;
-        current.forEach(index => {
-            squares[currentPosition + index].classList.remove('block', currentColor);
-        });
-    }
-
-    // 7. 블록 아래로 이동
-    function moveDown() {
-        if (isPaused || isGameOver) return;
-        undraw();
-        currentPosition += width;
-        if (checkCollision()) {
-            currentPosition -= width;
-            freeze();
-        }
-        draw();
-    }
-
-    // 8. 충돌 감지
-    function checkCollision() {
-        return current.some(index =>
-            squares[currentPosition + index].classList.contains('taken')
-        );
-    }
-
-    // 9. 블록 고정 (Freeze) 및 새 블록 생성
-    function freeze() {
-        current.forEach(index => squares[currentPosition + index].classList.add('taken'));
-        addScore();
-        generateNewPiece();
-        gameOver();
-    }
-
-    // 10. 새 블록 생성
-    function generateNewPiece() {
-        random = nextRandom;
-        nextRandom = Math.floor(Math.random() * theTetrominoes.length);
-        current = theTetrominoes[random][0]; // 새로운 블록은 0도 회전 상태로 시작
-        currentColor = colors[random];
-        currentPosition = 4;
-        currentRotation = 0;
-        
-        draw();
-        displayNextPiece();
-
-        // 새 블록 생성 시 바로 충돌 체크 (게임 오버 조건)
-        if (checkCollision()) {
-            gameOver();
-        }
-    }
-
-    // 11. 다음 블록 표시
-    const displayShapes = [
-        [1, nextWidth + 1, nextWidth * 2 + 1, 2], // L
-        [0, nextWidth, nextWidth * 2, nextWidth * 2 + 1], // J
-        [1, nextWidth + 1, nextWidth * 2 + 1, nextWidth * 3 + 1], // I
-        [0, 1, nextWidth, nextWidth + 1], // O
-        [nextWidth + 1, nextWidth + 2, nextWidth * 2, nextWidth * 2 + 1], // S
-        [nextWidth, nextWidth + 1, nextWidth * 2 + 1, nextWidth * 2 + 2], // Z
-        [1, nextWidth, nextWidth + 1, nextWidth + 2] // T
-    ];
-
-    function displayNextPiece() {
-        // 다음 보드 초기화
-        nextSquares.forEach(square => {
-            square.classList.remove('block', ...colors);
-        });
-
-        // 다음 블록 그리기
-        displayShapes[nextRandom].forEach(index => {
-            nextSquares[index].classList.add('block', colors[nextRandom]);
-        });
-    }
-
-
-    // 12. 키 입력 제어
-    function control(e) {
-        if (isPaused || isGameOver) return;
-        if (e.keyCode === 37) { // 왼쪽 화살표
-            moveLeft();
-        } else if (e.keyCode === 38) { // 위쪽 화살표 (회전)
-            rotate();
-        } else if (e.keyCode === 39) { // 오른쪽 화살표
-            moveRight();
-        } else if (e.keyCode === 40) { // 아래쪽 화살표
-            moveDown(); // 일반적인 하강 속도로 한 칸 이동
-        } else if (e.keyCode === 32) { // 스페이스바 (하드 드롭)
-            hardDrop();
-        }
-    }
-    document.addEventListener('keydown', control);
-
-    // 13. 왼쪽 이동
-    function moveLeft() {
-        undraw();
-        const isAtLeftEdge = current.some(index => (currentPosition + index) % width === 0);
-        if (!isAtLeftEdge) currentPosition -= 1;
-        if (checkCollision()) {
-            currentPosition += 1; // 충돌 시 되돌리기
-        }
-        draw();
-    }
-
-    // 14. 오른쪽 이동
-    function moveRight() {
-        undraw();
-        const isAtRightEdge = current.some(index => (currentPosition + index) % width === width - 1);
-        if (!isAtRightEdge) currentPosition += 1;
-        if (checkCollision()) {
-            currentPosition -= 1; // 충돌 시 되돌리기
-        }
-        draw();
-    }
-
-    // 15. 회전
-    function rotate() {
-        undraw();
-        currentRotation++;
-        if (currentRotation === current.length) { // 마지막 회전 상태를 넘어가면 0으로 리셋
-            currentRotation = 0;
-        }
-        current = theTetrominoes[random][currentRotation];
-
-        // 벽차기 (Wall Kicks)는 구현하지 않고 간단한 충돌 방지 로직만 적용
-        if (checkCollision()) {
-            currentRotation--;
-            if (currentRotation < 0) currentRotation = current.length - 1;
-            current = theTetrominoes[random][currentRotation];
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>바닐라 JS 테트리스</title>
+    <style>
+        /*
+        ===================================================================
+        CSS 스타일
+        ===================================================================
+        */
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            min-height: 100vh;
+            margin: 0;
+            background-color: #2c3e50; /* 어두운 배경 */
+            color: #ecf0f1;
+            font-family: Arial, sans-serif;
+            padding-top: 20px;
         }
 
-        draw();
-    }
+        .game-container {
+            display: flex;
+            gap: 20px;
+        }
 
-    // 16. 하드 드롭 (스페이스바)
-    function hardDrop() {
-        if (isPaused || isGameOver) return;
-        let originalPosition = currentPosition;
-        
-        // 충돌할 때까지 한 칸씩 아래로 이동
-        while (!checkCollision()) {
-            undraw();
-            currentPosition += width;
+        /* 게임 보드 스타일 */
+        .grid {
+            width: 200px; /* 10칸 * 20px */
+            height: 400px; /* 20줄 * 20px */
+            display: flex;
+            flex-wrap: wrap;
+            border: 3px solid #f39c12; /* 보드 테두리 */
+            background-color: #34495e; /* 보드 내부 배경 */
+        }
+
+        .grid div {
+            width: 20px;
+            height: 20px;
+            box-sizing: border-box;
+            border: 1px solid #4a6781; /* 셀 구분선 */
         }
         
-        currentPosition -= width; // 충돌 지점에서 한 칸 위로 되돌리기
-        draw();
-        freeze(); // 블록 고정
-    }
+        /* 바닥에 깔리는 'taken' 셀 스타일 (게임 보드의 20줄 아래 1줄) */
+        .grid .taken {
+            background-color: #34495e; /* 보드 배경과 동일하게 설정하여 바닥 경계를 시각적으로 숨김 */
+            border: none;
+        }
+        
+        /* 블록이 쌓인 곳의 스타일 */
+        .grid div.block {
+            border: 2px outset #bdc3c7;
+            /* 그림자 효과로 입체감을 줍니다 */
+            box-shadow: 0 0 5px rgba(0, 0, 0, 0.5) inset;
+        }
 
-    // 17. 줄 제거 및 점수 계산
-    function addScore() {
-        for (let i = 0; i < 199; i += width) {
-            const row = [i, i + 1, i + 2, i + 3, i + 4, i + 5, i + 6, i + 7, i + 8, i + 9];
+        /* 사이드 패널 스타일 */
+        .side-panel {
+            width: 150px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
 
-            if (row.every(index => squares[index].classList.contains('taken'))) {
-                score += 10;
-                scoreDisplay.innerHTML = `점수: ${score}`;
+        .next-block-area {
+            background-color: #34495e;
+            padding: 10px;
+            border: 2px solid #2ecc71;
+            text-align: center;
+        }
 
-                // 줄 제거
-                row.forEach(index => {
-                    squares[index].classList.remove('taken', 'block', ...colors);
+        .next-grid {
+            width: 80px; /* 4칸 * 20px */
+            height: 80px; /* 4줄 * 20px */
+            display: flex;
+            flex-wrap: wrap;
+            margin: 10px auto;
+            border: 1px dashed #ecf0f1;
+        }
+
+        .next-grid div {
+            width: 20px;
+            height: 20px;
+            box-sizing: border-box;
+        }
+
+        /* 점수 표시 스타일 */
+        .score-display {
+            font-size: 1.5em;
+            margin-bottom: 10px;
+        }
+
+        /* 버튼 스타일 */
+        .start-button {
+            padding: 10px 20px;
+            font-size: 1.2em;
+            cursor: pointer;
+            background-color: #e74c3c;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            transition: background-color 0.2s;
+        }
+
+        .start-button:hover {
+            background-color: #c0392b;
+        }
+
+
+        /* 테트로미노(블록) 색상 정의 */
+        .l { background-color: orange; }
+        .j { background-color: blue; }
+        .i { background-color: cyan; }
+        .o { background-color: yellow; }
+        .s { background-color: limegreen; }
+        .z { background-color: red; }
+        .t { background-color: purple; }
+
+    </style>
+</head>
+<body>
+
+    <div class="game-container">
+        <div class="grid">
+            </div>
+
+        <div class="side-panel">
+            <div class="score-display">점수: 0</div>
+            
+            <div class="next-block-area">
+                <h3>다음 블록</h3>
+                <div class="next-grid">
+                    </div>
+            </div>
+            
+            <button class="start-button">시작</button>
+            
+            <p>
+                **조작법**<br>
+                ← → : 이동<br>
+                ↑ : 회전<br>
+                ↓ : 소프트 드롭<br>
+                Space : 하드 드롭
+            </p>
+        </div>
+    </div>
+
+
+    <script>
+        /*
+        ===================================================================
+        JavaScript 로직 (제공해주신 코드)
+        ===================================================================
+        */
+        document.addEventListener('DOMContentLoaded', () => {
+            // 1. 기본 설정
+            const grid = document.querySelector('.grid');
+            const nextGrid = document.querySelector('.next-grid');
+            const scoreDisplay = document.querySelector('.score-display');
+            const startButton = document.querySelector('.start-button');
+            const width = 10; // 게임 보드 너비 (10칸)
+            let nextWidth = 4; // 다음 블록 보드 너비 (4칸)
+            let squares = Array.from(grid.querySelectorAll('div'));
+            let nextSquares = Array.from(nextGrid.querySelectorAll('div'));
+            let timerId; // 게임 루프 타이머
+            let score = 0;
+            let isGameOver = false;
+            let isPaused = true;
+
+            // 2. 게임 보드 초기화: 200개의 셀 + 10개의 고스트 셀 (바닥)
+            // 210개의 div를 생성하고 'grid'에 추가합니다.
+            for (let i = 0; i < 210; i++) {
+                const div = document.createElement('div');
+                if (i >= 200) {
+                    div.classList.add('taken'); // 바닥을 'taken'으로 표시
+                }
+                grid.appendChild(div);
+            }
+            squares = Array.from(grid.querySelectorAll('div'));
+
+            // 3. 다음 블록 보드 초기화
+            // 16개의 div를 생성하고 'next-grid'에 추가합니다.
+            for (let i = 0; i < 16; i++) {
+                const div = document.createElement('div');
+                nextGrid.appendChild(div);
+            }
+            nextSquares = Array.from(nextGrid.querySelectorAll('div'));
+
+
+            // 4. 테트로미노(Tetrominoes) 모양 정의 (7가지 블록)
+            const lTetromino = [
+                [1, width + 1, width * 2 + 1, 2],
+                [width, width + 1, width + 2, width * 2 + 2],
+                [1, width + 1, width * 2 + 1, width * 2],
+                [width, width * 2, width * 2 + 1, width * 2 + 2]
+            ];
+            
+            const jTetromino = [
+                [0, width, width * 2, width * 2 + 1],
+                [width, width + 1, width + 2, width * 2],
+                [1, width + 1, width * 2 + 1, width * 2],
+                [width, width * 2, width * 2 + 1, width * 2 + 2] // 이 부분은 J의 회전 형태가 아닌 L의 회전 형태와 동일하거나 유사합니다. 원본 코드를 유지합니다.
+            ];
+
+            const iTetromino = [
+                [1, width + 1, width * 2 + 1, width * 3 + 1],
+                [width, width + 1, width + 2, width + 3],
+                [1, width + 1, width * 2 + 1, width * 3 + 1],
+                [width, width + 1, width + 2, width + 3]
+            ];
+
+            const oTetromino = [
+                [0, 1, width, width + 1],
+                [0, 1, width, width + 1],
+                [0, 1, width, width + 1],
+                [0, 1, width, width + 1]
+            ];
+
+            const sTetromino = [
+                [width + 1, width + 2, width * 2, width * 2 + 1],
+                [1, width + 1, width + 2, width * 2 + 2],
+                [width + 1, width + 2, width * 2, width * 2 + 1],
+                [1, width + 1, width + 2, width * 2 + 2]
+            ];
+
+            const zTetromino = [
+                [width, width + 1, width * 2 + 1, width * 2 + 2],
+                [width * 2 + 1, width * 2, width + 1, width], // 이 형태는 Z의 회전 형태와는 다릅니다. 원본 코드를 유지합니다.
+                [width, width + 1, width * 2 + 1, width * 2 + 2],
+                [width * 2 + 1, width * 2, width + 1, width]
+            ];
+
+            const tTetromino = [
+                [1, width, width + 1, width + 2],
+                [1, width + 1, width + 2, width * 2 + 1],
+                [width, width + 1, width + 2, width * 2 + 1],
+                [1, width, width + 1, width * 2 + 1]
+            ];
+
+            const theTetrominoes = [lTetromino, jTetromino, iTetromino, oTetromino, sTetromino, zTetromino, tTetromino];
+            const colors = ['l', 'j', 'i', 'o', 's', 'z', 't']; // CSS 클래스와 일치
+
+            let currentPosition = 4; // 시작 위치
+            let currentRotation = 0; // 초기 회전 상태
+            let random = Math.floor(Math.random() * theTetrominoes.length);
+            let current = theTetrominoes[random][currentRotation];
+            let currentColor = colors[random];
+            let nextRandom = Math.floor(Math.random() * theTetrominoes.length);
+
+            // 5. 블록 그리기
+            function draw() {
+                if (!current) return;
+                current.forEach(index => {
+                    squares[currentPosition + index].classList.add('block', currentColor);
+                });
+            }
+
+            // 6. 블록 지우기
+            function undraw() {
+                if (!current) return;
+                current.forEach(index => {
+                    squares[currentPosition + index].classList.remove('block', currentColor);
+                });
+            }
+
+            // 7. 블록 아래로 이동
+            function moveDown() {
+                if (isPaused || isGameOver) return;
+                undraw();
+                currentPosition += width;
+                if (checkCollision()) {
+                    currentPosition -= width;
+                    freeze();
+                }
+                draw();
+            }
+
+            // 8. 충돌 감지
+            function checkCollision() {
+                return current.some(index =>
+                    squares[currentPosition + index] && squares[currentPosition + index].classList.contains('taken')
+                );
+            }
+
+            // 9. 블록 고정 (Freeze) 및 새 블록 생성
+            function freeze() {
+                current.forEach(index => squares[currentPosition + index].classList.add('taken'));
+                addScore();
+                generateNewPiece();
+                // gameOver는 generateNewPiece 내에서 충돌 체크 후 호출됩니다.
+            }
+
+            // 10. 새 블록 생성
+            function generateNewPiece() {
+                random = nextRandom;
+                nextRandom = Math.floor(Math.random() * theTetrominoes.length);
+                current = theTetrominoes[random][0]; // 새로운 블록은 0도 회전 상태로 시작
+                currentColor = colors[random];
+                currentPosition = 4;
+                currentRotation = 0;
+                
+                // 새 블록 생성 시 바로 충돌 체크 (게임 오버 조건)
+                if (checkCollision()) {
+                    gameOver();
+                } else {
+                    draw();
+                    displayNextPiece();
+                }
+            }
+
+            // 11. 다음 블록 표시 (4x4 그리드 기준 인덱스)
+            const displayShapes = [
+                [1, nextWidth + 1, nextWidth * 2 + 1, 2], // L
+                [0, nextWidth, nextWidth * 2, nextWidth * 2 + 1], // J
+                [1, nextWidth + 1, nextWidth * 2 + 1, nextWidth * 3 + 1], // I (세로로 표시)
+                [0, 1, nextWidth, nextWidth + 1], // O
+                [nextWidth + 1, nextWidth + 2, nextWidth * 2, nextWidth * 2 + 1], // S
+                [nextWidth, nextWidth + 1, nextWidth * 2 + 1, nextWidth * 2 + 2], // Z
+                [1, nextWidth, nextWidth + 1, nextWidth + 2] // T
+            ];
+
+            function displayNextPiece() {
+                // 다음 보드 초기화
+                nextSquares.forEach(square => {
+                    square.classList.remove('block', ...colors);
                 });
 
-                // 위에 있는 블록들을 아래로 이동
-                const squaresRemoved = squares.splice(i, width);
-                squares = squaresRemoved.concat(squares);
-                squares.forEach(cell => grid.appendChild(cell));
+                // 다음 블록 그리기
+                displayShapes[nextRandom].forEach(index => {
+                    nextSquares[index].classList.add('block', colors[nextRandom]);
+                });
             }
-        }
-    }
 
 
-    // 18. 게임 오버
-    function gameOver() {
-        if (current.some(index => squares[currentPosition + index].classList.contains('taken'))) {
-            scoreDisplay.innerHTML = '게임 오버! 최종 점수: ' + score;
-            clearInterval(timerId);
-            isGameOver = true;
-            startButton.innerHTML = '다시 시작';
-            document.removeEventListener('keydown', control);
-        }
-    }
+            // 12. 키 입력 제어
+            function control(e) {
+                if (isPaused || isGameOver) return;
+                if (e.keyCode === 37) { // 왼쪽 화살표
+                    moveLeft();
+                } else if (e.keyCode === 38) { // 위쪽 화살표 (회전)
+                    rotate();
+                } else if (e.keyCode === 39) { // 오른쪽 화살표
+                    moveRight();
+                } else if (e.keyCode === 40) { // 아래쪽 화살표 (소프트 드롭)
+                    moveDown();
+                } else if (e.keyCode === 32) { // 스페이스바 (하드 드롭)
+                    e.preventDefault(); // 스크롤 방지
+                    hardDrop();
+                }
+            }
+            document.addEventListener('keydown', control);
 
-    // 19. 시작/일시정지 버튼
-    startButton.addEventListener('click', () => {
-        if (isGameOver) {
-            // 게임 오버 상태에서 클릭 시 페이지 새로고침으로 간단하게 재시작
-            window.location.reload();
-            return;
-        }
+            // 13. 왼쪽 이동
+            function moveLeft() {
+                undraw();
+                // 왼쪽 끝 경계 체크
+                const isAtLeftEdge = current.some(index => (currentPosition + index) % width === 0);
+                
+                if (!isAtLeftEdge) currentPosition -= 1;
+                
+                if (checkCollision()) {
+                    currentPosition += 1; // 충돌 시 되돌리기
+                }
+                draw();
+            }
 
-        if (timerId) {
-            clearInterval(timerId);
-            timerId = null;
-            isPaused = true;
-            startButton.innerHTML = '계속';
-        } else {
-            draw();
-            displayNextPiece();
-            timerId = setInterval(moveDown, 1000); // 1초마다 블록 하강
-            isPaused = false;
-            startButton.innerHTML = '일시정지';
-        }
-    });
+            // 14. 오른쪽 이동
+            function moveRight() {
+                undraw();
+                // 오른쪽 끝 경계 체크
+                const isAtRightEdge = current.some(index => (currentPosition + index) % width === width - 1);
+                
+                if (!isAtRightEdge) currentPosition += 1;
+                
+                if (checkCollision()) {
+                    currentPosition -= 1; // 충돌 시 되돌리기
+                }
+                draw();
+            }
 
-    // 20. 초기 블록 표시
-    displayNextPiece();
-});
+            // 15. 회전
+            function rotate() {
+                undraw();
+                const originalRotation = currentRotation;
+                currentRotation++;
+                if (currentRotation === theTetrominoes[random].length) {
+                    currentRotation = 0;
+                }
+                current = theTetrominoes[random][currentRotation];
+
+                // 회전 후 보드 경계를 벗어나는지 확인 (단순 충돌만 체크)
+                if (checkCollision()) {
+                    // 충돌 시 이전 회전 상태로 되돌리기
+                    currentRotation = originalRotation;
+                    current = theTetrominoes[random][currentRotation];
+                }
+
+                draw();
+            }
+
+            // 16. 하드 드롭 (스페이스바)
+            function hardDrop() {
+                if (isPaused || isGameOver) return;
+                
+                undraw(); // 현재 위치의 블록을 지웁니다.
+                
+                // 충돌할 때까지 한 칸씩 아래로 이동
+                while (!checkCollision()) {
+                    currentPosition += width;
+                }
+                
+                currentPosition -= width; // 충돌 지점에서 한 칸 위로 되돌리기 (최종 위치)
+                
+                draw();
+                freeze(); // 블록 고정
+            }
+
+            // 17. 줄 제거 및 점수 계산
+            function addScore() {
+                // 게임 보드 20줄 (index 0 ~ 199)만 확인
+                for (let i = 0; i < 200; i += width) { 
+                    const row = [];
+                    for(let j = 0; j < width; j++) {
+                        row.push(i + j);
+                    }
+
+                    // 줄 전체가 'taken' 클래스를 가지고 있는지 확인
+                    if (row.every(index => squares[index].classList.contains('taken'))) {
+                        score += 10;
+                        scoreDisplay.innerHTML = `점수: ${score}`;
+
+                        // 줄 제거 및 클래스 초기화
+                        row.forEach(index => {
+                            squares[index].classList.remove('taken', 'block', ...colors);
+                        });
+
+                        // 위에 있는 블록들을 아래로 이동 (DOM 조작)
+                        const squaresRemoved = squares.splice(i, width); // 제거된 줄
+                        squares = squaresRemoved.concat(squares); // 제거된 줄을 squares 배열 맨 앞으로 이동
+                        squares.forEach(cell => grid.appendChild(cell)); // DOM에 반영
+                        
+                        // i 값을 줄의 길이만큼 감소시켜, 방금 줄이 삭제된 위치를 다시 검사하도록 함
+                        // (새로운 줄이 이 위치로 이동했기 때문)
+                        i -= width; 
+                    }
+                }
+            }
+
+            // 18. 게임 오버
+            function gameOver() {
+                // 새 블록 생성 시, 시작 위치에 이미 'taken' 블록이 있으면 게임 오버
+                if (checkCollision()) {
+                    scoreDisplay.innerHTML = '게임 오버! 최종 점수: ' + score;
+                    clearInterval(timerId);
+                    timerId = null; // 타이머 ID 초기화
+                    isGameOver = true;
+                    startButton.innerHTML = '다시 시작';
+                    document.removeEventListener('keydown', control);
+                }
+            }
+
+            // 19. 시작/일시정지 버튼
+            startButton.addEventListener('click', () => {
+                if (isGameOver) {
+                    // 게임 오버 상태에서 클릭 시 페이지 새로고침으로 간단하게 재시작
+                    window.location.reload();
+                    return;
+                }
+
+                if (timerId) {
+                    // 일시정지
+                    clearInterval(timerId);
+                    timerId = null;
+                    isPaused = true;
+                    startButton.innerHTML = '계속';
+                } else {
+                    // 시작 또는 재개
+                    if (isPaused) {
+                        isPaused = false;
+                        draw(); // 블록이 이미 생성되어 있다면 다시 그립니다.
+                        displayNextPiece(); // 다음 블록을 표시합니다.
+                    }
+                    
+                    if(!current) { // 첫 시작일 경우 블록을 생성합니다.
+                        generateNewPiece();
+                    }
+                    
+                    timerId = setInterval(moveDown, 1000); // 1초마다 블록 하강
+                    startButton.innerHTML = '일시정지';
+                }
+            });
+
+            // 20. 초기 설정
+            // 게임 시작 전에는 다음 블록만 보여줍니다.
+            generateNewPiece(); // nextRandom을 설정하고 current 블록은 그리지 않습니다.
+            undraw(); // generateNewPiece에서 draw()를 잠시 호출하지만, 시작 전이므로 지웁니다.
+            displayNextPiece(); // 다음 블록을 보여줍니다.
+        });
+
+    </script>
+</body>
+</html>
